@@ -19,21 +19,21 @@ SQLite3
 Hashlib (for password security)
 Google Maps API (URL-based navigation)
 
-🏞 Modules
+Modules
 
-Month-wise Explorer
+Month-wise Explorer:
 View tourist places based on best visiting months.
 
-District-wise Explorer
+District-wise Explorer:
 Browse all districts of Karnataka in alphabetical order.
 
-Search System
+Search System:
 Search any place using:
 Place name
 District
 Category (Nature, Historical, Spiritual, etc.)
 
-Sample Categories
+Sample Categories:
 Historical Places 
 Nature & Hills 
 Waterfalls 
@@ -45,5 +45,5 @@ Adventure Spots
 Project Objective:
 The main goal of this project is to:Promote Karnataka tourism digitally Provide structured travel information Help users plan trips easily Build a real-world data-driven web app
 
-Author
+Author: 
 Raju Dabbin
