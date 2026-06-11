@@ -34,7 +34,8 @@ Live Link: `https://your-app-name.streamlit.app`
 📁 KARNATAKA TRAVEL GUIDE/
 │
 ├── 📁 .streamlit/
-│   └── 📄 config.toml       # Custom performance and privacy UI configurations
+│   └── 📄 config.toml
+    |__ 📄 secrets.toml       # Custom performance and privacy UI configurations
 │
 ├── 📁 static/
 │   ├── 📄 cover.jpg         # Application entry cinematic assets
