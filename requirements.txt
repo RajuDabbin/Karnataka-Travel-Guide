@@ -1,0 +1,10 @@
+streamlit
+pandas
+plotly
+requests
+streamlit-folium
+folium
+supabase
+reportlab
+streamlit-cookies-controller
+google-genai
