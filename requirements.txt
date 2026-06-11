@@ -6,5 +6,6 @@ streamlit-folium
 folium
 supabase
 reportlab
-streamlit-cookies-controller
+extra-streamlit-components
 google-genai
+matplotlib
