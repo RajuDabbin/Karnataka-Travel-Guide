@@ -102,15 +102,20 @@ st.markdown(
 # ==========================================
 # 2. UNIFIED COOKIE CONTROLLER INITIALIZATION
 # ==========================================
+# ==========================================
+# 2. UNIFIED COOKIE CONTROLLER INITIALIZATION
+# ==========================================
 controller = CookieController(key="auth")
 
-# Give the async frontend controller a tiny fraction of a second to build if needed
+# Give the async component engine a stable window to sync browser cookies
 time.sleep(0.1)
 
 def try_cookie_signin():
-    """Intercepts active tokens natively from backend headers or frontend components."""
+    """Intercepts active authentication tokens natively from backend headers or frontend components."""
     if not st.session_state.logged_in:
         try:
+            # 1. 📱 SMARTPHONE HYBRID FIX: Read direct network cookie request headers first
+            # This completely bypasses mobile iframe tracking blocking rules!
             headers = st.context.headers
             cookie_string = headers.get("Cookie", "") or headers.get("cookie", "")
             
@@ -119,7 +124,6 @@ def try_cookie_signin():
             user_email = None
             
             if cookie_string:
-                # Parse out your cookie values cleanly from the request string
                 parsed_cookies = {}
                 for item in cookie_string.split("; "):
                     if "=" in item:
@@ -130,7 +134,7 @@ def try_cookie_signin():
                 refresh = parsed_cookies.get("sb_refresh_token")
                 user_email = parsed_cookies.get("sb_user_email")
                 
-                # Clean up URL-encoded and double-escaped component wrapping quotes
+                # Dynamic String Sanitizer: Strips out hidden URL encoding strings and browser-escaped wrapping quotes
                 if access: 
                     access = urllib.parse.unquote(access).strip('"').replace('\\"', '').strip('"')
                 if refresh: 
@@ -138,18 +142,17 @@ def try_cookie_signin():
                 if user_email: 
                     user_email = urllib.parse.unquote(user_email).strip('"').replace('\\"', '').strip('"')
 
-            # FALLBACK: If header tracking was blank, read from the frontend component (Laptops)
+            # 2. LAPTOP FALLBACK: If header payload was blocked/empty, read from the frontend component
             if not access or not refresh:
                 access = controller.get("sb_access_token")
                 refresh = controller.get("sb_refresh_token")
                 user_email = controller.get("sb_user_email")
                 
-                # Apply the same strict string string text cleaning to the component inputs
                 if access: access = str(access).strip('"')
                 if refresh: refresh = str(refresh).strip('"')
                 if user_email: user_email = str(user_email).strip('"')
 
-            # VERIFY CLEANED SESSION WITH SUPABASE AUTH ENGINE
+            # 3. VERIFY SESSION WITH SUPABASE AUTH ENGINE ONLY IF VALID
             if access and refresh and len(access) > 10:
                 res = supabase.auth.set_session(access, refresh)
                 if res.user:
