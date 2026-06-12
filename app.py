@@ -113,39 +113,62 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# ==========================================
+# 2. UNIFIED COOKIE CONTROLLER INITIALIZATION
+# ==========================================
 controller = CookieController(key="auth")
 
+# Give the async component engine a stable window to sync browser cookies
+time.sleep(0.1)
+
 def try_cookie_signin():
-    """Checks for active sessions via LocalStorage bridge or network headers."""
+    """Intercepts active authentication tokens natively from backend headers or frontend components."""
     if not st.session_state.logged_in:
         try:
-            # Check the value returned from our JavaScript LocalStorage wrapper bridge
-            if js_bridge and js_bridge != 'NO_SESSION' and isinstance(js_bridge, dict):
-                access = js_bridge.get("access")
-                refresh = js_bridge.get("refresh")
-                user_email = js_bridge.get("email")
-            else:
-                # Fallback to headers stream parsing if the bridge hasn't fired yet
-                headers = st.context.headers
-                cookie_string = headers.get("Cookie", "") or headers.get("cookie", "")
-                access, refresh, user_email = None, None, None
-                if cookie_string:
-                    parsed_cookies = dict(item.split("=", 1) for item in cookie_string.split("; ") if "=" in item)
-                    access = parsed_cookies.get("sb_access_token")
-                    refresh = parsed_cookies.get("sb_refresh_token")
-                    user_email = parsed_cookies.get("sb_user_email")
+            # 1. Read network request headers directly (Unbreakable path for phones)
+            headers = st.context.headers
+            cookie_string = headers.get("Cookie", "") or headers.get("cookie", "")
+            
+            access = None
+            refresh = None
+            user_email = None
+            
+            if cookie_string:
+                parsed_cookies = {}
+                for item in cookie_string.split("; "):
+                    if "=" in item:
+                        k, v = item.split("=", 1)
+                        parsed_cookies[k.strip()] = v.strip()
+                
+                access = parsed_cookies.get("sb_access_token")
+                refresh = parsed_cookies.get("sb_refresh_token")
+                user_email = parsed_cookies.get("sb_user_email")
+                
+                # Clean up mobile quotation formatting masks safely without destroying local structures
+                if access: access = access.strip('"\'').replace('%22', '').strip()
+                if refresh: refresh = refresh.strip('"\'').replace('%22', '').strip()
+                if user_email: user_email = urllib.parse.unquote(user_email).strip('"\'').replace('%22', '').strip()
 
-            # Clean and sanitize token string variables
-            if access: access = urllib.parse.unquote(access).strip('"').replace('\\"', '').strip('"')
-            if refresh: refresh = urllib.parse.unquote(refresh).strip('"').replace('\\"', '').strip('"')
-            if user_email: user_email = urllib.parse.unquote(user_email).strip('"').replace('\\"', '').strip('"')
+            # 2. LAPTOP FALLBACK: If header payload was completely empty, read from the frontend component
+            if not access or not refresh:
+                access = controller.get("sb_access_token")
+                refresh = controller.get("sb_refresh_token")
+                user_email = controller.get("sb_user_email")
+                
+                if access: access = str(access).strip('"\'')
+                if refresh: refresh = str(refresh).strip('"\'')
+                if user_email: user_email = str(user_email).strip('"\'')
 
-            # Authenticate session with Supabase
+            # 3. VERIFY SESSION WITH SUPABASE AUTH ENGINE ONLY IF VALID
             if access and refresh and len(access) > 10:
                 res = supabase.auth.set_session(access, refresh)
                 if res.user:
                     st.session_state.logged_in = True
-                    st.session_state.user = user_email if user_email else res.user.user_metadata.get("username", res.user.email)
+                    st.session_state.user = (
+                        user_email
+                        if user_email
+                        else res.user.user_metadata.get("username", res.user.email)
+                    )
                     st.session_state.access_token = access
                     st.session_state.refresh_token = refresh
                     if st.session_state.page in ["login", "signup"]:
