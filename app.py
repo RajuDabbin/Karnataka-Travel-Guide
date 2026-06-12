@@ -1,42 +1,58 @@
-from matplotlib.pylab import normal
-import streamlit as st
-import pandas as pd
-import sqlite3
+import base64
 import hashlib
-import plotly.express as px
-import urllib.parse
+import os
 import random
 import smtplib
 import time
-from streamlit_folium import st_folium
-import folium
-from folium.plugins import MarkerCluster
-import requests
+import urllib.parse
 from email.mime.text import MIMEText
-from google import genai
-from reportlab.platypus import (
-    SimpleDocTemplate,
-    Paragraph,
-    Spacer
-)
-from reportlab.lib.styles import getSampleStyleSheet
-from supabase import create_client
-import base64
-import os
-from math import radians, sin, cos, sqrt, atan2
+from math import atan2, cos, radians, sin, sqrt
 
-from streamlit_cookies_controller import CookieController
-
-
+import folium
+import pandas as pd
+import plotly.express as px
+import requests
+import sqlite3
+import streamlit as st
 import streamlit.components.v1 as components
+from google import genai
+from matplotlib.pylab import normal
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from streamlit_cookies_controller import CookieController
+from streamlit_folium import st_folium
+from supabase import create_client
 
-# Inject Open Graph properties straight into the head element frame
+# ==========================================
+# 1. ABSOLUTE TOP: INITIALIZE PAGE CONFIG (ONCE)
+# ==========================================
+st.set_page_config(
+    page_title="Karnataka Travel Guide",
+    page_icon="🌍",
+    layout="wide",
+    menu_items={
+        "Get Help": "https://github.com/rajudabbin",
+        "About": "# Karnataka Travel Guide\nOptimize routes, estimate budgets, and explore Karnataka tourism.",
+    },
+)
+
+# Initialize Session States Safely
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+if "user" not in st.session_state:
+    st.session_state.user = None
+if "access_token" not in st.session_state:
+    st.session_state.access_token = None
+if "refresh_token" not in st.session_state:
+    st.session_state.refresh_token = None
+if "page" not in st.session_state:
+    st.session_state.page = "login"
+
+# Inject Open Graph SEO configurations
 components.html(
     """
     <script>
         const head = window.parent.document.head;
-        
-        // Helper function to prevent creating duplicates if the page re-renders
         function setMetaProperty(property, content) {
             let meta = head.querySelector(`meta[property="${property}"]`);
             if (!meta) {
@@ -46,7 +62,6 @@ components.html(
             }
             meta.setAttribute('content', content);
         }
-
         setMetaProperty('og:title', 'Karnataka Travel Guide');
         setMetaProperty('og:description', 'Optimize your travel routes, estimate trip budgets, and explore the best of Karnataka tourism in one place.');
         setMetaProperty('og:type', 'website');
@@ -56,6 +71,7 @@ components.html(
     width=0,
 )
 
+# Fetch Database Secrets
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
 SUPABASE_SERVICE_KEY = st.secrets["SUPABASE_SERVICE_KEY"]
@@ -63,56 +79,46 @@ SUPABASE_SERVICE_KEY = st.secrets["SUPABASE_SERVICE_KEY"]
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
-
-# Make sure this is at the very top of your app logic
-st.set_page_config(
-    page_title="Karnataka Travel Guide",
-    page_icon="🌍",
-    layout="wide",
-    menu_items={
-        'Get Help': 'https://github.com/rajudabbin',  # Replace with your actual repo link
-        'About': "# Karnataka Travel Guide\nOptimize your travel routes, estimate trip budgets, and explore the best of Karnataka tourism in one place."
-    }
-)
-
-# Inject SEO Description Meta Tags so Google can show a snippet under your title
-st.markdown("""
+# SEO Search Metadata Headers
+st.markdown(
+    """
     <head>
         <title>Karnataka Travel Guide - Smart Route Planner & Cost Estimator</title>
         <meta name="description" content="Discover beautiful destinations in Karnataka. Plan smart road trips, calculate travel costs, check live weather, and explore local hotels.">
-        <meta name="keywords" content="Karnataka Tourism,Karnataka Travel Guide,Katravel,Travel guide,Travel suggestion, Travel Guide, Trip Planner, Badami, Aihole, Hampi, Raju Dabbin, Smart Trip Planner, Karnataka Road Trip,Travel Cost Estimator, Budget Trip Calculator, Route Optimizer, Explore Karnataka, Karnataka Tourist Places, Bangalore Weekend Getaways, Heritage Tourism Karnataka, Western Ghats Trekking, Coastal Karnataka Beaches, Waterfalls in Karnataka, Badami Fort, Aihole Temples, Pattadakal Heritage, Hampi Ruins, Melkote Photography, Coorg Itinerary, Chikmagalur Stay, Mysore Palace, Gokarna Beach, Kabini Wildlife Safari, Bagalkot Tourism, Udupi Travel, Uttara Kannada Road Trip, KSRTC Bus Itinerary, Driving Routes Karnataka, Raju Dabbin, Streamlit Travel Application">
         <meta name="author" content="Raju Dabbin">
         <meta name="robots" content="index, follow">
-        
     </head>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-# Initialize the controller 
+# ==========================================
+# 2. UNIFIED COOKIE CONTROLLER & SESSION AUTH
+# ==========================================
 controller = CookieController(key="auth")
 
+# Give the async controller a split millisecond window to ensure handshakes complete
+time.sleep(0.05)
 
 try:
     access = controller.get("sb_access_token")
     refresh = controller.get("sb_refresh_token")
-    user = controller.get("sb_user_email")
+    user_email = controller.get("sb_user_email")
 
-    if (
-        access
-        and refresh
-        and not st.session_state.get("logged_in", False)
-    ):
-        res = supabase.auth.set_session(
-            access,
-            refresh
-        )
-
+    if access and refresh and not st.session_state.logged_in:
+        # Validate and recover live session with Supabase auth service
+        res = supabase.auth.set_session(access, refresh)
         if res.user:
             st.session_state.logged_in = True
-            st.session_state.user = user
+            st.session_state.user = (
+                user_email
+                if user_email
+                else res.user.user_metadata.get("username", res.user.email)
+            )
             st.session_state.access_token = access
             st.session_state.refresh_token = refresh
-            st.session_state.page = "home"
-
+            if st.session_state.page == "login":
+                st.session_state.page = "home"
 except Exception:
     pass
 
@@ -2607,14 +2613,15 @@ def trip_generator():
 # =========================================================================
 # APPLICATION ROUTING MATRICES
 # =========================================================================
+# =========================================================================
+# APPLICATION ROUTING MATRICES (CLEAN & FIXED)
+# =========================================================================
 if st.session_state.get("show_intro", True):
     intro_screen()
     st.stop()   
-    
-if not st.session_state.logged_in:
-    if not controller.getAll():
-        time.sleep(1)
 
+# 1. Check if we need to restore an existing session from cookies
+if not st.session_state.logged_in:
     saved_access = controller.get("sb_access_token")
     saved_refresh = controller.get("sb_refresh_token")
     saved_user = controller.get("sb_user_email")
@@ -2624,39 +2631,25 @@ if not st.session_state.logged_in:
             res = supabase.auth.set_session(saved_access, saved_refresh)
             if res.user:
                 st.session_state.logged_in = True
-                st.session_state.user = saved_user
+                st.session_state.user = saved_user if saved_user else res.user.user_metadata.get("username", res.user.email)
                 st.session_state.access_token = saved_access
                 st.session_state.refresh_token = saved_refresh
-                st.session_state.page = "home"
+                
+                # Default to home page if they were sitting on login/empty screens
+                if st.session_state.page in ["login", "signup"]:
+                    st.session_state.page = "home"
                 st.rerun()
         except Exception:
-            pass
-
-if not st.session_state.logged_in:
-    if not controller.getAll():
-        time.sleep(0.18)
-
-    saved_access = controller.get("sb_access_token")
-    saved_refresh = controller.get("sb_refresh_token")
-    saved_user = controller.get("sb_user_email")
-
-    if saved_access and saved_refresh:
-        try:
-            res = supabase.auth.set_session(saved_access, saved_refresh)
-            if res.user:
-                st.session_state.logged_in = True
-                st.session_state.user = saved_user if saved_user else res.user.email
-                st.session_state.access_token = saved_access
-                st.session_state.refresh_token = saved_refresh
-                st.session_state.page = "home"
-        except Exception:
+            # Clear corrupt or expired tokens smoothly
             controller.remove("sb_access_token")
             controller.remove("sb_refresh_token")
             controller.remove("sb_user_email")
 
+# 2. Enforce Login wall if still unauthenticated
 if not st.session_state.logged_in and st.session_state.page not in ["login", "signup", "forgot", "reset"]:
     st.session_state.page = "login"
 
+# 3. Master Page Renderer Switch
 if st.session_state.page == "login":
     login()
     show_branding()
