@@ -1446,20 +1446,11 @@ def nav():
                 
     with c6:
         if st.button(text_out, use_container_width=True):
-            try:
-                supabase.auth.sign_out()
-            except:
-                pass
+            try: supabase.auth.sign_out()
+            except: pass
             
-            # --- SAFELY REMOVE COOKIES ONLY IF THEY EXIST ---
-            cookies = controller.getAll()
-            if cookies:
-                if "sb_access_token" in cookies:
-                    controller.remove("sb_access_token")
-                if "sb_refresh_token" in cookies:
-                    controller.remove("sb_refresh_token")
-                if "sb_user_email" in cookies:
-                    controller.remove("sb_user_email")
+            # ⭐ ADD THIS BLOCK: Clear local storage values
+            components.html("""<script>window.parent.postMessage({type: 'CLEAR_SESSION'}, '*');</script>""", height=0, width=0)
             
             st.session_state.clear()
             st.session_state.user = ""
