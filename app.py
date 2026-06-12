@@ -37,7 +37,6 @@ st.set_page_config(
     },
 )
 
-# Initialize Session States Safely
 if "logged_in" not in st.session_state:
     st.session_state.logged_in = False
 if "user" not in st.session_state:
@@ -49,28 +48,49 @@ if "refresh_token" not in st.session_state:
 if "page" not in st.session_state:
     st.session_state.page = "login"
 
-# Inject Open Graph SEO configurations
-components.html(
+# =========================================================================
+# 📱 THE UNBREAKABLE MOBILE LOCALSTORAGE BRIDGE (BYPASSES COOKIE BLOCKING)
+# =========================================================================
+# This JavaScript snippet reads/writes tokens directly from the phone's 
+# Local Storage, which mobile browsers never block (unlike cookies).
+js_bridge = components.html(
     """
     <script>
-        const head = window.parent.document.head;
-        function setMetaProperty(property, content) {
-            let meta = head.querySelector(`meta[property="${property}"]`);
-            if (!meta) {
-                meta = window.parent.document.createElement('meta');
-                meta.setAttribute('property', property);
-                head.appendChild(meta);
-            }
-            meta.setAttribute('content', content);
+    // 1. Listen for requests from Streamlit to save a session
+    window.parent.addEventListener('message', function(e) {
+        if (e.data.type === 'SAVE_SESSION') {
+            localStorage.setItem('sb_access_token', e.data.access);
+            localStorage.setItem('sb_refresh_token', e.data.refresh);
+            localStorage.setItem('sb_user_email', e.data.email);
         }
-        setMetaProperty('og:title', 'Karnataka Travel Guide');
-        setMetaProperty('og:description', 'Optimize your travel routes, estimate trip budgets, and explore the best of Karnataka tourism in one place.');
-        setMetaProperty('og:type', 'website');
+        if (e.data.type === 'CLEAR_SESSION') {
+            localStorage.clear();
+        }
+    });
+
+    // 2. Automatically send tokens to Streamlit as soon as the page loads
+    setTimeout(function() {
+        const access = localStorage.getItem('sb_access_token');
+        const refresh = localStorage.getItem('sb_refresh_token');
+        const email = localStorage.getItem('sb_user_email');
+        if (access && refresh) {
+            window.parent.postMessage({
+                type: 'streamlit:setComponentValue',
+                value: {access: access, refresh: refresh, email: email}
+            }, '*');
+        } else {
+            window.parent.postMessage({
+                type: 'streamlit:setComponentValue',
+                value: 'NO_SESSION'
+            }, '*');
+        }
+    }, 150);
     </script>
     """,
     height=0,
     width=0,
 )
+
 
 # Fetch Database Secrets
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
@@ -93,75 +113,39 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ==========================================
-# 2. UNIFIED COOKIE CONTROLLER INITIALIZATION
-# ==========================================
-# ==========================================
-# 2. UNIFIED COOKIE CONTROLLER INITIALIZATION
-# ==========================================
-# ==========================================
-# 2. UNIFIED COOKIE CONTROLLER INITIALIZATION
-# ==========================================
-# ==========================================
-# 2. UNIFIED COOKIE CONTROLLER INITIALIZATION
-# ==========================================
 controller = CookieController(key="auth")
 
-# Give the async component engine a stable window to sync browser cookies
-time.sleep(0.1)
-
 def try_cookie_signin():
-    """Intercepts active authentication tokens natively from backend headers or frontend components."""
+    """Checks for active sessions via LocalStorage bridge or network headers."""
     if not st.session_state.logged_in:
         try:
-            # 1. 📱 SMARTPHONE HYBRID FIX: Read direct network cookie request headers first
-            # This completely bypasses mobile iframe tracking blocking rules!
-            headers = st.context.headers
-            cookie_string = headers.get("Cookie", "") or headers.get("cookie", "")
-            
-            access = None
-            refresh = None
-            user_email = None
-            
-            if cookie_string:
-                parsed_cookies = {}
-                for item in cookie_string.split("; "):
-                    if "=" in item:
-                        k, v = item.split("=", 1)
-                        parsed_cookies[k.strip()] = v.strip()
-                
-                access = parsed_cookies.get("sb_access_token")
-                refresh = parsed_cookies.get("sb_refresh_token")
-                user_email = parsed_cookies.get("sb_user_email")
-                
-                # Dynamic String Sanitizer: Strips out hidden URL encoding strings and browser-escaped wrapping quotes
-                if access: 
-                    access = urllib.parse.unquote(access).strip('"').replace('\\"', '').strip('"')
-                if refresh: 
-                    refresh = urllib.parse.unquote(refresh).strip('"').replace('\\"', '').strip('"')
-                if user_email: 
-                    user_email = urllib.parse.unquote(user_email).strip('"').replace('\\"', '').strip('"')
+            # Check the value returned from our JavaScript LocalStorage wrapper bridge
+            if js_bridge and js_bridge != 'NO_SESSION' and isinstance(js_bridge, dict):
+                access = js_bridge.get("access")
+                refresh = js_bridge.get("refresh")
+                user_email = js_bridge.get("email")
+            else:
+                # Fallback to headers stream parsing if the bridge hasn't fired yet
+                headers = st.context.headers
+                cookie_string = headers.get("Cookie", "") or headers.get("cookie", "")
+                access, refresh, user_email = None, None, None
+                if cookie_string:
+                    parsed_cookies = dict(item.split("=", 1) for item in cookie_string.split("; ") if "=" in item)
+                    access = parsed_cookies.get("sb_access_token")
+                    refresh = parsed_cookies.get("sb_refresh_token")
+                    user_email = parsed_cookies.get("sb_user_email")
 
-            # 2. LAPTOP FALLBACK: If header payload was blocked/empty, read from the frontend component
-            if not access or not refresh:
-                access = controller.get("sb_access_token")
-                refresh = controller.get("sb_refresh_token")
-                user_email = controller.get("sb_user_email")
-                
-                if access: access = str(access).strip('"')
-                if refresh: refresh = str(refresh).strip('"')
-                if user_email: user_email = str(user_email).strip('"')
+            # Clean and sanitize token string variables
+            if access: access = urllib.parse.unquote(access).strip('"').replace('\\"', '').strip('"')
+            if refresh: refresh = urllib.parse.unquote(refresh).strip('"').replace('\\"', '').strip('"')
+            if user_email: user_email = urllib.parse.unquote(user_email).strip('"').replace('\\"', '').strip('"')
 
-            # 3. VERIFY SESSION WITH SUPABASE AUTH ENGINE ONLY IF VALID
+            # Authenticate session with Supabase
             if access and refresh and len(access) > 10:
                 res = supabase.auth.set_session(access, refresh)
                 if res.user:
                     st.session_state.logged_in = True
-                    st.session_state.user = (
-                        user_email
-                        if user_email
-                        else res.user.user_metadata.get("username", res.user.email)
-                    )
+                    st.session_state.user = user_email if user_email else res.user.user_metadata.get("username", res.user.email)
                     st.session_state.access_token = access
                     st.session_state.refresh_token = refresh
                     if st.session_state.page in ["login", "signup"]:
@@ -1620,9 +1604,22 @@ def login():
                     st.session_state.access_token = res.session.access_token
                     st.session_state.refresh_token = res.session.refresh_token
                     
+                    # Save to cookies wrapper
                     controller.set("sb_access_token", res.session.access_token)
                     controller.set("sb_refresh_token", res.session.refresh_token)
                     controller.set("sb_user_email", current_username)
+                    
+                    # ⭐ ADD THIS BLOCK: Force push directly into mobile Local Storage container fields
+                    components.html(f"""
+                    <script>
+                        window.parent.postMessage({{
+                            type: 'SAVE_SESSION',
+                            access: '{res.session.access_token}',
+                            refresh: '{res.session.refresh_token}',
+                            email: '{current_username}'
+                        }}, '*');
+                    </script>
+                    """, height=0, width=0)
 
                 st.session_state.page = "home"
                 st.success("Login Successful!")
