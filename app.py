@@ -102,7 +102,7 @@ st.markdown(
 controller = CookieController(key="auth")
 
 # Give the async frontend controller a tiny fraction of a second to build if needed
-time.sleep(0.1)
+time.sleep(0.3)
 
 def try_cookie_signin():
     """Intercepts active tokens natively from backend headers or frontend components."""
