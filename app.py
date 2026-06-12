@@ -22,6 +22,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
 from streamlit_cookies_controller import CookieController
 from streamlit_folium import st_folium
 from supabase import create_client
+from folium.plugins import MarkerCluster
 
 # ==========================================
 # 1. ABSOLUTE TOP: INITIALIZE PAGE CONFIG (ONCE)
@@ -93,34 +94,43 @@ st.markdown(
 )
 
 # ==========================================
-# 2. UNIFIED COOKIE CONTROLLER & SESSION AUTH
+# 2. UNIFIED COOKIE CONTROLLER INITIALIZATION
 # ==========================================
 controller = CookieController(key="auth")
 
-# Give the async controller a split millisecond window to ensure handshakes complete
-time.sleep(0.05)
+# Give the async controller a tiny window to ensure browser handshakes complete
+time.sleep(0.1)
 
-try:
-    access = controller.get("sb_access_token")
-    refresh = controller.get("sb_refresh_token")
-    user_email = controller.get("sb_user_email")
+def try_cookie_signin():
+    """Intercepts active tokens from the browser on a fresh refresh or load."""
+    if not st.session_state.logged_in:
+        try:
+            access = controller.get("sb_access_token")
+            refresh = controller.get("sb_refresh_token")
+            user_email = controller.get("sb_user_email")
 
-    if access and refresh and not st.session_state.logged_in:
-        # Validate and recover live session with Supabase auth service
-        res = supabase.auth.set_session(access, refresh)
-        if res.user:
-            st.session_state.logged_in = True
-            st.session_state.user = (
-                user_email
-                if user_email
-                else res.user.user_metadata.get("username", res.user.email)
-            )
-            st.session_state.access_token = access
-            st.session_state.refresh_token = refresh
-            if st.session_state.page == "login":
-                st.session_state.page = "home"
-except Exception:
-    pass
+            if access and refresh:
+                res = supabase.auth.set_session(access, refresh)
+                if res.user:
+                    st.session_state.logged_in = True
+                    st.session_state.user = (
+                        user_email
+                        if user_email
+                        else res.user.user_metadata.get("username", res.user.email)
+                    )
+                    st.session_state.access_token = access
+                    st.session_state.refresh_token = refresh
+                    if st.session_state.page in ["login", "signup"]:
+                        st.session_state.page = "home"
+                    return True
+        except Exception:
+            try:
+                controller.remove("sb_access_token")
+                controller.remove("sb_refresh_token")
+                controller.remove("sb_user_email")
+            except:
+                pass
+    return False
 
 def get_local_img_base64(image_path):
     """Converts a local image file to a base64 string for HTML rendering."""
@@ -133,16 +143,6 @@ def get_local_img_base64(image_path):
         return "https://images.unsplash.com/photo-1506744038136-46273834b3fb?w=800"
 
 DEFAULT_IMAGE = "static/default.jpg"
-
-
-if "user" not in st.session_state:
-    st.session_state.user = None
-if "access_token" not in st.session_state:
-    st.session_state.access_token = None
-if "refresh_token" not in st.session_state:
-    st.session_state.refresh_token = None
-if "page" not in st.session_state:
-    st.session_state.page = "login"
 
 def restore_session():
     try:
@@ -193,11 +193,7 @@ def get_osrm_route(origin_lat, origin_lon, dest_lat, dest_lon):
     except:
         return None, None
 
-st.set_page_config(
-    page_title="Karnataka Travel Guide",
-    page_icon="🌍",
-    layout="wide"
-)
+# NOTE: THE SECOND DUPLICATE ST.SET_PAGE_CONFIG CALL HAS BEEN REMOVED FROM THIS LOCATION TO PREVENT STATE RESET
 
 # =========================================================================
 # CENTRALIZED THEME INJECTION MAPPED ACCORDING TO YOUR DESIGN PREFERENCES
@@ -523,9 +519,6 @@ div[data-testid="column"]:last-child .stButton > button:hover {
     box-shadow: 0 12px 25px rgba(200, 75, 49, 0.35) !important;
 }
 
-/* METRICS & BUDGET DISPLAY CONTAINER SYSTEM */
-
-
 /* FOLIUM TOURISM MAP WIDTH FIX */
 div[data-testid="stHtmlBlock"] iframe, 
 div.element-container iframe[title="streamlit_folium.st_folium"] {
@@ -561,182 +554,144 @@ a:hover { text-decoration: underline; color: #ffffff; }
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--tea-estate-green); border-radius: 10px; }
 
-
 /* =========================================================================
    MASTER VALUE TEXT SELECTION HIGHLIGHT FIX (HOME & TRIP GENERATOR)
    ========================================================================= */
-/* Target value spans, buttons, markdown containers, and select entries globally */
 div[data-testid="stSelectbox"] div[role="button"] span,
 div[data-testid="stSelectbox"] div[role="button"],
 div[data-testid="stSelectbox"] [data-testid="stMarkdownContainer"] p,
 div[data-testid="stSelectbox"] div[data-baseweb="select"] [aria-selected="true"],
 .stSelectbox div[data-baseweb="select"] > div,
 div[data-baseweb="select"] div[title] {
-    color: #f5e6d3 !important;                 /* Pure Limestone Cream font color */
+    color: #f5e6d3 !important;                  
     font-family: 'Poppins', sans-serif !important;
     font-weight: 600 !important;
     font-size: 16px !important;
-    -webkit-text-fill-color: #f5e6d3 !important; /* Strips browser-level webkit text opacity fading */
-    opacity: 1 !important;                     /* Guarantees 100% solid visibility on dark backgrounds */
+    -webkit-text-fill-color: #f5e6d3 !important; 
+    opacity: 1 !important;                       
 }
 
-/* Ensure the background layer remains transparent so your text isn't masked */
 div[data-testid="stSelectbox"] [data-baseweb="select"] > div {
     background-color: transparent !important;
 }
 
-
 /* =========================================================================
    MULTIPLE SELECTION CHIPS & STEPPER BUTTON CLEANUP
    ========================================================================= */
-
-/* 1. FIX VISIBILITY INSIDE DESTINATION DISTRICTS (st.multiselect) */
 div[data-testid="stMultiSelect"] div[data-baseweb="select"] span,
 div[data-testid="stMultiSelect"] div[data-baseweb="select"] div[role="button"],
 div[data-testid="stMultiSelect"] [data-baseweb="select"] div {
     color: #f5e6d3 !important;  
     font-family: 'Poppins', sans-serif !important;
     font-weight: 600 !important;
-    font-size: 16px !important;             /* Solid Limestone Cream font */
-    -webkit-text-fill-color: #f5e6d3 !important; /* Force overrides dark browser text-fade */
+    font-size: 16px !important;             
+    -webkit-text-fill-color: #f5e6d3 !important; 
     opacity: 1 !important;
 }
 
-/* Fix for the placeholder text when no destination is chosen yet */
 div[data-testid="stMultiSelect"] div[data-baseweb="select"] div[dir="aria-hidden"] {
-    color: #dfc59f !important;                  /* Smooth Sandstone for placeholder */
+    color: #dfc59f !important;                  
     -webkit-text-fill-color: #dfc59f !important;
     opacity: 0.7 !important;
 }
 
-
 /* =========================================================================
    BORDERLESS STEPPER BUTTON FIX (st.number_input)
    ========================================================================= */
-/* Target the stepper buttons inside the number input widget */
 div[data-testid="stNumberInput"] button {
     background-color: transparent !important;   
     background: transparent !important;
-    
-    /* Strips out the internal box borders completely */
     border: none !important;                     
     border-left: none !important;
     border-right: none !important;
     border-top: none !important;
     border-bottom: none !important;
-    
-    color: #dfc59f !important; /* Sandstone color for the + and - symbols */
+    color: #dfc59f !important; 
     box-shadow: none !important;
     transition: all 0.2s ease-in-out !important;
 }
 
-/* Maintain clean theme-matching hover logic without drawing square box lines */
 div[data-testid="stNumberInput"] button:hover {
     background: linear-gradient(135deg, #e59a1a, #c84b31) !important;
     background-color: linear-gradient(135deg, #e59a1a, #c84b31) !important;
-    color: #f5b025 !important; /* Sunlit Gold pop when hovering the icon */
-    transform: scale(1.15) !important; /* Elegant slight grow effect on hover instead of a box border */
+    color: #f5b025 !important; 
+    transform: scale(1.15) !important; 
     border: none !important;
 }
 
-/* Ensure the outer input wrapper keeps its clean rounded border container intact */
 div[data-testid="stNumberInput"] div[data-baseweb="input"] {
     border: 2px solid #dfc59f !important;
-    border-radius: 12px !important; /* Enforces seamless rounding around the right edge */
+    border-radius: 12px !important; 
 }
 
 /* =========================================================================
-   STRICT MULTISELECT BORDER & TRANSITION STEPS FIX
+   STRICT BORDER & TRANSITION STEPS FIX
    ========================================================================= */
-
-/* 1. FORCE THE INTACT SANDSTONE BORDER FOR DESTINATION DISTRICTS */
 div[data-testid="stMultiSelect"] div[data-baseweb="select"] {
     border-radius: 12px !important;
-    border: 2px solid #dfc59f !important; /* Premium Hampi sandstone border outline */
+    border: 2px solid #dfc59f !important; 
     box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.4) !important;
     background: transparent !important;
     transition: all 0.3s ease-in-out !important;
 }
 
-/* Multiselect box focus state glow matching the select box style */
 div[data-testid="stMultiSelect"] div[data-baseweb="select"]:hover,
 div[data-testid="stMultiSelect"] div[data-baseweb="select"]:focus-within {
-    border-color: #f5b025 !important; /* Sunlit gold stroke */
+    border-color: #f5b025 !important; 
     box-shadow: 0px 0px 14px rgba(245, 176, 37, 0.4) !important;
 }
-
-
-
 
 div[data-testid="stNumberInput"] {
     width: 100% !important;
 }
 
-/* Force the actual visible outer bounding container to replicate Box #1 exactly */
 div[data-testid="stNumberInput"] > div {
-    /* Absolute outer border encapsulation */
-    border: 2px solid #dfc59f !important;       /* Premium Hampi Sandstone border outline */
-    border-radius: 12px !important;              /* Identical corner curves matching box #1 */
-    
-    /* Core theme layout styling */
-    background: linear-gradient(135deg, #113224, #0f2d4a) !important; /* Signature uniform gradient */
+    border: 2px solid #dfc59f !important;       
+    border-radius: 12px !important;              
+    background: linear-gradient(135deg, #113224, #0f2d4a) !important; 
     box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.4) !important;
-    
-    height: 48px !important;                     /* Force matching explicit row thickness */
+    height: 48px !important;                     
     display: flex !important;
     align-items: center !important;
     box-sizing: border-box !important;
-    padding: 0px 14px !important;                /* Continuous uniform inner padding alignment */
+    padding: 0px 14px !important;                
     transition: all 0.3s ease-in-out !important;
 }
 
-/* Active Hover / Focus glow state matching selectbox #1 exactly */
 div[data-testid="stNumberInput"] > div:hover,
 div[data-testid="stNumberInput"] > div:focus-within {
-    border-color: #f5b025 !important;            /* Sunlit gold stroke */
+    border-color: #f5b025 !important;            
     box-shadow: 0px 0px 14px rgba(245, 176, 37, 0.4) !important;
 }
 
-/* 2. COMPLETELY STRIP STREAMLIT'S INTERNAL TEXT CONTAINER BORDERS & GLOWS */
 div[data-testid="stNumberInput"] div[data-baseweb="input"],
 div[data-testid="stNumberInput"] [data-baseweb="base-input"],
 div[data-testid="stNumberInput"] [data-baseweb="input"] > div {
     background-color: transparent !important;
     background: transparent !important;
-    border: none !important;                     /* Erases that inner vertical yellow divider line completely! */
+    border: none !important;                     
     outline: none !important;
-    box-shadow: none !important;                 /* Removes internal focus shadows completely */
+    box-shadow: none !important;                 
     height: 100% !important;
 }
-
-
-
-
-
-
-
-
 
 /* =========================================================================
    REVIEWS & FEEDBACK PERFECT THEME FIX
    ========================================================================= */
-
-/* Fix Text Area: Transparent background, clear white/cream text, visible placeholder */
 div[data-testid="stForm"] div[data-testid="stTextArea"] textarea {
     min-height: 140px !important;
     height: 140px !important;
-    color: #f5e6d3 !important; /* Pure Limestone Cream text color */
-    background-color: rgba(15, 45, 74, 0.4) !important; /* Semi-transparent Coastal Blue */
+    color: #f5e6d3 !important; 
+    background-color: rgba(15, 45, 74, 0.4) !important; 
     background: rgba(15, 45, 74, 0.4) !important;
-    border: 2px solid #dfc59f !important; /* Sandstone border */
+    border: 2px solid #dfc59f !important; 
     border-radius: 12px !important;
     padding: 12px !important;
     opacity: 1 !important;
     visibility: visible !important;
-    -webkit-text-fill-color: #f5e6d3 !important; /* Fix for browser autofill overrides */
+    -webkit-text-fill-color: #f5e6d3 !important; 
 }
 
-/* Force inner wrapper container to be completely transparent */
 div[data-testid="stForm"] div[data-testid="stTextArea"] [data-baseweb="base-input"],
 div[data-testid="stForm"] div[data-testid="stTextArea"] > div {
     height: auto !important;
@@ -747,35 +702,31 @@ div[data-testid="stForm"] div[data-testid="stTextArea"] > div {
     box-shadow: none !important;
 }
 
-/* Fix Placeholder color so it is actually legible */
 div[data-testid="stForm"] div[data-testid="stTextArea"] textarea::placeholder {
-    color: rgba(223, 197, 159, 0.6) !important; /* Semi-transparent Sandstone */
+    color: rgba(223, 197, 159, 0.6) !important; 
 }
 
-/* Fix the White Submit Buttons: Enforce Tea Estate Green & Gold Hover */
 div[data-testid="stForm"] button[type="submit"] {
     width: 100% !important;
     height: 46px !important;
-    background: #113224 !important; /* Strict Tea Estate Green */
+    background: #113224 !important; 
     border: 2px solid #dfc59f !important; 
     border-radius: 14px !important;
-    color: #f5e6d3 !important; /* Limestone Cream text */
+    color: #f5e6d3 !important; 
     font-size: 15px !important;
     font-weight: 600 !important;
     transition: all 0.3s ease !important;
     box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.3) !important;
 }
 
-/* Hover effect for form buttons */
 div[data-testid="stForm"] button[type="submit"]:hover {
-    background: linear-gradient(135deg, #e59a1a, #c84b31) !important; /* Sunlit Gold to Terracotta */
+    background: linear-gradient(135deg, #e59a1a, #c84b31) !important; 
     color: #ffffff !important;
     transform: translateY(-2px) !important;
     box-shadow: 0 8px 20px rgba(229, 154, 26, 0.3) !important;
     border-color: #ffffff !important;
 }
 
-/* Fix Expander Header visibility */
 div[data-testid="stExpander"] summary {
     background-color: rgba(17, 50, 36, 0.3) !important;
     border-radius: 12px !important;
@@ -785,8 +736,6 @@ div[data-testid="stExpander"] summary:hover {
     border-color: #f5b025 !important;
 }
 
-
-
 /* =========================================================================
    STRICT FORM SUBMIT BUTTON UNIFICATION OVERRIDE
    ========================================================================= */
@@ -794,11 +743,11 @@ div[data-testid="stFormSubmitButton"] button,
 div[data-testid="stForm"] button[type="submit"] {
     width: 100% !important;
     height: 46px !important;
-    background: #113224 !important; /* Force Solid Tea Estate Green background */
+    background: #113224 !important; 
     background-color: #113224 !important;
-    border: 2px solid var(--accent-sandstone) !important; /* Sandstone outline */
+    border: 2px solid var(--accent-sandstone) !important; 
     border-radius: 14px !important;
-    color: var(--text-cream) !important; /* High contrast Limestone Cream text font color */
+    color: var(--text-cream) !important; 
     -webkit-text-fill-color: var(--text-cream) !important;
     font-size: 15px !important;
     font-weight: 600 !important;
@@ -809,41 +758,31 @@ div[data-testid="stForm"] button[type="submit"] {
     box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.4) !important;
 }
 
-/* Force Hover State Interactions */
 div[data-testid="stFormSubmitButton"] button:hover,
 div[data-testid="stForm"] button[type="submit"]:hover {
-    background: linear-gradient(135deg, #e59a1a, #c84b31) !important; /* Gold to Terracotta POP */
+    background: linear-gradient(135deg, #e59a1a, #c84b31) !important; 
     background-color: #e59a1a !important;
-    color: #ffffff !important; /* Crisp pure white text on hover */
+    color: #ffffff !important; 
     -webkit-text-fill-color: #ffffff !important;
-    transform: translateY(-3px) !important; /* Elegant grow lift matching your other buttons */
+    transform: translateY(-3px) !important; 
     box-shadow: 0 12px 25px rgba(229, 154, 26, 0.35) !important;
     border: 2px solid rgba(255, 255, 255, 0.5) !important;
 }
 
-
 /* =========================================================================
    STRICT REVIEWS TEXT AREA TRANSPARENCY & VISIBILITY OVERRIDE
    ========================================================================= */
-
-/* Force the text field to be transparent */
 div[data-testid="stForm"] div[data-testid="stTextArea"] textarea {
     min-height: 140px !important;
     height: 140px !important;
-    
-    /* BACKGROUND TRANSPARENCY */
     background: transparent !important;
     background-color: transparent !important;
-    
-    color: #f5e6d3 !important;                   
+    color: #f5e6d3 !important;                    
     -webkit-text-fill-color: #f5e6d3 !important; 
     font-size: 16px !important;
     font-family: 'Poppins', sans-serif !important;
     font-weight: 500 !important;
-    
     caret-color: #f5b025 !important;
-    
-    /* BORDERS & CORNERS */
     border: 2px solid #dfc59f !important;        
     border-radius: 12px !important;
     padding: 14px !important;
@@ -852,7 +791,6 @@ div[data-testid="stForm"] div[data-testid="stTextArea"] textarea {
     transition: all 0.3s ease-in-out !important;
 }
 
-/* Add a gold glow when clicking inside the text box */
 div[data-testid="stForm"] div[data-testid="stTextArea"] textarea:focus,
 div[data-testid="stForm"] div[data-testid="stTextArea"] textarea:active {
     color: #f5e6d3 !important;
@@ -862,7 +800,6 @@ div[data-testid="stForm"] div[data-testid="stTextArea"] textarea:active {
     outline: none !important;
 }
 
-/* Strip background masks from hidden inner container wrappers entirely */
 div[data-testid="stForm"] div[data-testid="stTextArea"],
 div[data-testid="stForm"] div[data-testid="stTextArea"] [data-baseweb="base-input"],
 div[data-testid="stForm"] div[data-testid="stTextArea"] > div {
@@ -872,14 +809,11 @@ div[data-testid="stForm"] div[data-testid="stTextArea"] > div {
     box-shadow: none !important;
 }
 
-/* Legible soft cream placeholder styling */
 div[data-testid="stForm"] div[data-testid="stTextArea"] textarea::placeholder {
     color: rgba(245, 230, 211, 0.4) !important;
     -webkit-text-fill-color: rgba(245, 230, 211, 0.4) !important;
 }
 
-
-/* Update this selector to cover BOTH forms seamlessly */
 div[data-testid="stForm"] div[data-testid="stTextArea"] textarea {
     min-height: 140px !important;
     height: 140px !important;
@@ -894,27 +828,21 @@ div[data-testid="stForm"] div[data-testid="stTextArea"] textarea {
     font-size: 16px !important;
 }
 
-
 /* =========================================================================
    SUGGESTION PANEL FORM INPUT FIELDS HIGHEST PRIORITY OVERRIDES
    ========================================================================= */
-
-/* Target text inputs inside your suggestions form */
 div[data-testid="stForm"] div[data-testid="stTextInput"] input,
 div[data-testid="stForm"] div[data-testid="stTextInput"] [data-baseweb="base-input"] {
     background: transparent !important;
     background-color: transparent !important;
-    
-    color: #f5e6d3 !important;                   
+    color: #f5e6d3 !important;                    
     -webkit-text-fill-color: #f5e6d3 !important; 
     font-size: 16px !important;
     font-family: 'Poppins', sans-serif !important;
     font-weight: 500 !important;
-    
     caret-color: #f5b025 !important;             
 }
 
-/* Ensure outer wrapper remains transparent on hover/focus */
 div[data-testid="stForm"] div[data-testid="stTextInput"] [data-baseweb="base-input"]:hover,
 div[data-testid="stForm"] div[data-testid="stTextInput"] [data-baseweb="base-input"]:focus-within {
     background: transparent !important;
@@ -923,30 +851,25 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] [data-baseweb="base-inp
     box-shadow: 0px 0px 14px rgba(245, 176, 37, 0.3) !important;
 }
 
-/* Remove default placeholder text visibility */
 div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
     color: rgba(245, 230, 211, 0.2) !important;  
     -webkit-text-fill-color: rgba(245, 230, 211, 0.2) !important;
 }
 
-
 /* =========================================================================
-   🌟 POWERFUL SMARTPHONE NAVIGATION & UNBREAKABLE DROPDOWN VIEWPORT CONTROLLERS
+   🌟 POWERFUL SMARTPHONE NAVIGATION & Dropdown VIEWPORT CONTROLLERS
    ========================================================================= */
 @media screen and (max-width: 768px) {
-    
-    /* 1. SHRINK WELCOME HEADER POSITIONING GAP FOOTPRINT */
     h1 {
         margin-top: -30px !important;     
         margin-bottom: 5px !important;     
         font-size: 22px !important;        
     }
 
-    /* 2. TARGET ONLY NAVIGATION ELEMENT CONTAINERS PACKS */
     div[data-testid="stHorizontalBlock"]:has(button) {
         display: flex !important;
         flex-direction: row !important;
-        flex-wrap: wrap !important;        /* Let menu keys wrap safely down */
+        flex-wrap: wrap !important;        
         justify-content: center !important;
         gap: 5px !important;
     }
@@ -968,7 +891,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         text-overflow: clip !important;
     }
 
-    /* Clear image emoji text markers entirely on mobile viewports */
     div[data-testid="stHorizontalBlock"]:has(button) button p::first-letter,
     div[data-testid="stHorizontalBlock"]:has(button) button span::first-letter {
         color: transparent !important;
@@ -984,8 +906,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         margin-top: 5px !important;
     }
 
-    /* 3. TARGET AND ALIGN THE THREE HOME DROPDOWNS SIDE-BY-SIDE */
-    /* Forces the home layout columns to remain horizontal on mobile devices */
     div[data-testid="stHomeView"] div[data-testid="stHorizontalBlock"]:has(div[data-testid="stSelectbox"]),
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stSelectbox"]) {
         display: flex !important;
@@ -996,7 +916,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         width: 100% !important;
     }
 
-    /* Assigns equal sizing parameters across all three dropdown containers */
     div[data-testid="stHomeView"] div[data-testid="stHorizontalBlock"]:has(div[data-testid="stSelectbox"]) > div,
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stSelectbox"]) > div {
         min-width: calc(33.33% - 4px) !important;
@@ -1006,7 +925,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         padding: 0 !important;
     }
 
-    /* Condense label parameters so text layout doesn't overlap or break lines */
     div[data-testid="stSelectbox"] label[data-testid="stWidgetLabel"] p {
         font-size: 14px !important;
         text-align: center !important;
@@ -1014,10 +932,9 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         margin-bottom: 2px !important;
     }
 
-    /* UNBREAKABLE SELECTION FRAME HEIGHT COMPRESSION FIXED */
     div[data-testid="stSelectbox"] div[data-baseweb="select"],
     div[data-testid="stSelectbox"] [data-baseweb="base-input"] {
-        height: 34px !important;      /* Forces overall skeletal framework lower */
+        height: 34px !important;      
         min-height: 34px !important;  
     }
     
@@ -1025,26 +942,21 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         padding-top: 0px !important;
         padding-bottom: 0px !important;
         font-size: 10px !important;
-        line-height: 30px !important;  /* Centers selection values cleanly inside the 34px element frame */
+        line-height: 30px !important;  
         height: 28px !important;
         min-height: 28px !important;
         display: flex !important;
         align-items: center !important;
     }
 
-    /* Force the dropdown arrow indicators to scale down proportionally */
     div[data-testid="stSelectbox"] div[data-baseweb="select"] svg {
         width: 16px !important;
         height: 16px !important;
     }
 
-
-
     /* =========================================================================
        🧮 MOBILE TRIP GENERATOR SPECIFIC LAYOUT ALIGNMENTS
        ========================================================================= */
-       
-    /* Force the Trip Planner columns to always flow in balanced side-by-side rows */
     div[data-testid="stHomeView"] -not-needed, 
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]),
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMultiSelect"]) {
@@ -1057,7 +969,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         margin-bottom: 4px !important;
     }
 
-    /* Keep row pairs strictly split at 50% width on small screens */
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]) > div,
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMultiSelect"]) > div {
         min-width: calc(50% - 4px) !important;
@@ -1065,7 +976,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         flex-grow: 1 !important;
     }
 
-    /* Equalize widget inner tracking box constraints */
     div[data-testid="stMultiSelect"] div[data-baseweb="select"],
     div[data-testid="stNumberInput"] > div,
     div[data-testid="stSlider"] {
@@ -1073,7 +983,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         min-height: 38px !important;
     }
 
-    /* Fix widget header labels so they never wrap into illegible fragments */
     div[data-testid="stMultiSelect"] label p,
     div[data-testid="stNumberInput"] label p,
     div[data-testid="stSlider"] label p {
@@ -1089,7 +998,7 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
     div[data-testid="stNumberInput"] button {
         background: transparent !important;
         background-color: transparent !important;
-        color: #dfc59f !important;           /* High contrast premium Hampi Sandstone */
+        color: #dfc59f !important;           
         opacity: 1 !important;
         visibility: visible !important;
         display: flex !important;
@@ -1097,18 +1006,16 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         justify-content: center !important;
         width: 32px !important;
         height: 100% !important;
-        border: none !important;             /* Eliminates box lines without hiding the icon */
+        border: none !important;             
         box-shadow: none !important;
     }
 
-    /* Provide a luminous highlight effect when interacting with the steppers */
     div[data-testid="stNumberInput"] button:hover {
-        color: #f5b025 !important;           /* Sunlit Gold pop on tap */
+        color: #f5b025 !important;           
         transform: scale(1.2) !important;
         background: rgba(255, 255, 255, 0.05) !important;
     }
 
-    /* Align the numeric text input value directly between the controls */
     div[data-testid="stNumberInput"] input {
         text-align: center !important;
         font-size: 15px !important;
@@ -1119,20 +1026,17 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
     /* =========================================================================
        📏 PERFECT EQUALIZATION FOR TRIP PLANNER INPUT COMPONENT BOXES
        ========================================================================= */
-    
-    /* 1. Force absolute uniform bounding container heights */
     div[data-testid="stSelectbox"] div[data-baseweb="select"],
     div[data-testid="stMultiSelect"] div[data-baseweb="select"],
     div[data-testid="stNumberInput"] > div,
     div[data-testid="stFormSubmitButton"] button {
-        height: 44px !important;       /* Increased frame baseline thickness */
+        height: 44px !important;       
         min-height: 44px !important;  
         box-sizing: border-box !important;
     }
 
-    /* 2. Vertically align inner interactive values across standard select elements */
     div[data-testid="stSelectbox"] div[role="button"] {
-        line-height: 40px !important;   /* Aligns single select text perfectly inside the 44px bounds */
+        line-height: 40px !important;   
         height: 40px !important;
         padding-top: 0px !important;
         padding-bottom: 0px !important;
@@ -1140,20 +1044,18 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         align-items: center !important;
     }
 
-    /* 3. Ensure multi-select chips are aligned uniformly */
     div[data-testid="stMultiSelect"] div[role="button"] {
         padding-top: 2px !important;
         padding-bottom: 2px !important;
         min-height: 38px !important;
     }
 
-    /* 4. Fix title text line heights so titles stay evenly aligned horizontally */
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]) label p,
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMultiSelect"]) label p {
-        min-height: 36px !important;    /* Creates an invisible text shelf so labels never misalign blocks */
+        min-height: 36px !important;    
         display: flex !important;
-        align-items: flex-end !important; /* Locks all label text to baseline heights */
-        white-space: normal !important;   /* Let text wrap naturally if needed without splitting boxes */
+        align-items: flex-end !important; 
+        white-space: normal !important;   
         line-height: 1.2 !important;
         margin-bottom: 6px !important;
     }
@@ -1161,8 +1063,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
     /* =========================================================================
        🎯 ISOLATED NO-COLLISION EQUALIZER (TRIP DURATION & TRAVELERS ROW ONLY)
        ========================================================================= */
-
-    /* 1. Set up the row block normally with a safe top alignment */
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]) {
         display: flex !important;
         flex-direction: row !important;
@@ -1170,7 +1070,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         gap: 8px !important;
     }
 
-    /* 2. Lock down column widths */
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]) > div {
         min-width: calc(50% - 4px) !important;
         max-width: calc(50% - 4px) !important;
@@ -1178,7 +1077,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         padding: 0px !important;
     }
 
-    /* 3. Keep text labels perfectly clear above their inputs */
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]) label {
         position: static !important;
         margin-bottom: 6px !important; 
@@ -1192,14 +1090,12 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         padding: 0px !important;
     }
 
-    /* 4. ONLY target the slider that shares a row with the Travelers number input box */
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]) div[data-testid="stSlider"] > div:first-child {
-        transform: translateY(11px) !important; /* Safely nudges only this specific track line down */
+        transform: translateY(11px) !important; 
         margin: 0px !important;
         padding: 0px !important;
     }
 
-    /* 5. Clean up margins on this specific slider track line */
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stNumberInput"]) div[data-testid="stSlider"] [data-baseweb="slider"] {
         margin: 0px !important;
         padding: 0px !important;
@@ -1208,32 +1104,25 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
     /* =========================================================================
        🚀 SLIDER BOTTOM CLEARANCE EQUALIZER (PREVENTS TEXT CLIPPING)
        ========================================================================= */
-
-    /* Targets the native container wrapper for ALL sliders on mobile and forces space below them */
     div[data-testid="stSlider"] {
-        margin-bottom: 24px !important; /* Forces a perfect 24px structural gap below slider tracks */
+        margin-bottom: 24px !important; 
     }
 
-    /* Target headers or labels that sit directly after a slider block to ensure zero overlap */
     div[data-testid="stSlider"] + div {
         margin-top: 12px !important;
     }
     
-    
     /* =========================================================================
        🎯 PERFECT MATRIX MATCH (STARTING DISTRICT & DESTINATION DISTRICTS)
        ========================================================================= */
-
-    /* 1. Target the exact row container holding both top location inputs */
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMultiSelect"]) {
         display: flex !important;
         flex-direction: row !important;
-        align-items: flex-end !important; /* Force them flat on the exact same bottom floor line */
+        align-items: flex-end !important; 
         gap: 8px !important;
         width: 100% !important;
     }
 
-    /* 2. Force both columns to share the exact same 50% physical width footprint */
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMultiSelect"]) > div {
         min-width: calc(50% - 4px) !important;
         max-width: calc(50% - 4px) !important;
@@ -1242,18 +1131,16 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         padding: 0px !important;
     }
 
-    /* 3. Strip internal spacing differences between single-select and multi-select wrappers */
     div[data-testid="stSelectbox"] div[data-baseweb="select"],
     div[data-testid="stMultiSelect"] div[data-baseweb="select"] {
         width: 100% !important;
-        height: 44px !important;         /* Force identical vertical sizing bounds */
+        height: 44px !important;         
         min-height: 44px !important;
         box-sizing: border-box !important;
     }
 
-    /* 4. Fix text truncation and padding differences inside the inner input buttons */
     div[data-testid="stSelectbox"] div[role="button"] {
-        padding: 0px 14px !important;    /* Force identical inner padding signature */
+        padding: 0px 14px !important;    
         height: 40px !important;
         line-height: 40px !important;
         display: flex !important;
@@ -1267,11 +1154,10 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         align-items: center !important;
     }
 
-    /* 5. Force text labels on top to stay completely aligned and never misalign the boxes */
     .block-container div[data-testid="stHorizontalBlock"]:has(div[data-testid="stMultiSelect"]) label {
-        min-height: 36px !important;     /* Uniform text shelf height */
+        min-height: 36px !important;     
         display: flex !important;
-        align-items: flex-end !important; /* Lock titles down to the same starting line */
+        align-items: flex-end !important; 
         margin-bottom: 6px !important;
     }
 
@@ -1280,24 +1166,16 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
         line-height: 1.2 !important;
         margin: 0px !important;
         padding: 0px !important;
-        white-space: normal !important;   /* Let text wrap naturally if needed without pushing elements */
+        white-space: normal !important;   
     }
-    
-
-
-    
 }   
     
-    
 @media (max-width: 768px) {
-        
-        /* 1. Target horizontal blocks ONLY inside your custom card containers */
         div[class*="st-key-card_"] [data-testid="stHorizontalBlock"] {
             flex-direction: column !important;
             display: flex !important;
         }
         
-        /* 2. Force ONLY the columns within these cards to take full width */
         div[class*="st-key-card_"] [data-testid="stHorizontalBlock"] > div,
         div[class*="st-key-card_"] [data-testid="stHorizontalBlock"] [data-testid="stColumn"] {
             width: 100% !important;
@@ -1308,7 +1186,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
             margin-bottom: 15px !important;
         }
         
-        /* 3. Center and scale the card images beautifully */
         div[class*="st-key-card_"] [data-testid="stHorizontalBlock"] img {
             display: block !important;
             margin: 0 auto !important;
@@ -1317,9 +1194,6 @@ div[data-testid="stForm"] div[data-testid="stTextInput"] input::placeholder {
             height: auto !important;
         }
     }
-
-
-
 </style>
 """, unsafe_allow_html=True)
 
@@ -1927,12 +1801,6 @@ def home():
     # =========================================================================
     # RECOMMENDED PLACES LOOP WITH RESPONSIVE 2X2 BUTTON MATRIX FOR MOBILE
     # =========================================================================
-    # =========================================================================
-    # RECOMMENDED PLACES LOOP WITH RESPONSIVE 2X2 BUTTON MATRIX FOR MOBILE
-    # =========================================================================
-    # =========================================================================
-    # RECOMMENDED PLACES LOOP WITH RESPONSIVE 2X2 BUTTON MATRIX FOR MOBILE
-    # =========================================================================
     for idx, r in temp.head(20).iterrows():
         fav = is_fav(r["Place"])
         icon = "❤️" if fav else "🤍"
@@ -2107,7 +1975,7 @@ def home():
                         """, unsafe_allow_html=True)
                 else:
                     st.caption("No written reviews yet. Be the first to add yours!")
-        
+        st.markdown('</div>', unsafe_allow_html=True)
         
 def google_images_link(place, district):
     query = urllib.parse.quote_plus(f"{place} {district} Karnataka")
@@ -2144,7 +2012,6 @@ def favorites():
     nav()
     st.markdown("<h2>Favorites</h2>", unsafe_allow_html=True)
     
-    # 1. Force clear cache or directly read live entries to ensure instant synchronization
     try:
         res = supabase.table("favorites") \
             .select("*") \
@@ -2159,7 +2026,6 @@ def favorites():
         st.info("No favorites added yet. Head back to Home to save some tourist spots!")
         return
 
-    # 2. Render cards with fixed 'linear-gradient' spelling so text values display safely
     for f in favs:
         st.markdown(f"""
         <div style="background: linear-gradient(135deg, #113224, #0f2d4a) !important; 
@@ -2392,9 +2258,6 @@ def trip_generator():
     </div>
     """, unsafe_allow_html=True)
 
-    # =========================================================================
-    # 🚗 RESTRUCTURED BALANCED TRIP INPUT LAYOUT (TWO BY TWO MATRIX)
-    # =========================================================================
     districts = sorted(df["District"].unique())
 
     # --- ROW 1: CORE LOCATIONS ---
@@ -2539,19 +2402,19 @@ def trip_generator():
 
         if travel_mode == "Own Bike":
             bikes_required = max(1, (travelers + 1) // 2)
-            transport_cost = int(trip_distance * 2.5 * bikes_required)
+            transport_cost = int(trip_distance * 3 * bikes_required)
         elif travel_mode == "Own Car":
             capacity = (5 if vehicle_type == "4+1 Seater" else 7) if driver_type == "Self Drive" else (4 if vehicle_type == "4+1 Seater" else 6)
             cars_required = max(1, (travelers + capacity - 1) // capacity)
-            transport_cost = int(trip_distance * 6 * cars_required)
+            transport_cost = int(trip_distance * 6.5 * cars_required)
         elif travel_mode == "Rental Bike":
             bikes_required = max(1, (travelers + 1) // 2)
-            transport_cost = int((days * 500 * bikes_required) + (trip_distance * 2.5 * bikes_required))
+            transport_cost = int((days * 500 * bikes_required) + (trip_distance * 3 * bikes_required))
         elif travel_mode == "Rental Car":
             capacity = (5 if vehicle_type == "4+1 Seater" else 7) if driver_type == "Self Drive" else (4 if vehicle_type == "4+1 Seater" else 6)
             rental_per_day = 2000 if vehicle_type == "4+1 Seater" else 3000
             cars_required = max(1, (travelers + capacity - 1) // capacity)
-            transport_cost = int((days * rental_per_day * cars_required) + (trip_distance * 6 * cars_required))
+            transport_cost = int((days * rental_per_day * cars_required) + (trip_distance * 6.5 * cars_required))
         else:
             transport_cost = int(trip_distance * 1.5 * travelers)
 
@@ -2593,7 +2456,7 @@ def trip_generator():
         st.markdown("<br>", unsafe_allow_html=True)
         st.success(f"Estimated Budget Required: ₹{total_cost:,}")
 
-        place_names = [p["Place"] for p in trip_places]
+        user_summary_places = [p["Place"] for p in trip_places]
         st.markdown("<h2>📋 Trip Summary</h2>", unsafe_allow_html=True)
         
         summary_html = f"""
@@ -2603,7 +2466,7 @@ def trip_generator():
                 <div>Trip Duration     : {days} Days</div>
                 <div>Travelers         : {travelers}</div>
                 <div>Travel Mode       : {travel_mode}</div>
-                <div>Places Covered    : {len(place_names)}</div>
+                <div>Places Covered    : {len(user_summary_places)}</div>
                 <div style="margin-top: 5px; color: #f5b025 !important;">Estimated Budget  : ₹{total_cost:,}</div>
             </div>
         </div>
@@ -2611,41 +2474,16 @@ def trip_generator():
         st.markdown(summary_html, unsafe_allow_html=True)
 
 # =========================================================================
-# APPLICATION ROUTING MATRICES
-# =========================================================================
-# =========================================================================
 # APPLICATION ROUTING MATRICES (CLEAN & FIXED)
 # =========================================================================
 if st.session_state.get("show_intro", True):
     intro_screen()
     st.stop()   
 
-# 1. Check if we need to restore an existing session from cookies
-if not st.session_state.logged_in:
-    saved_access = controller.get("sb_access_token")
-    saved_refresh = controller.get("sb_refresh_token")
-    saved_user = controller.get("sb_user_email")
+# 1. Execute runtime cookie verification step before rendering anything
+try_cookie_signin()
 
-    if saved_access and saved_refresh:
-        try:
-            res = supabase.auth.set_session(saved_access, saved_refresh)
-            if res.user:
-                st.session_state.logged_in = True
-                st.session_state.user = saved_user if saved_user else res.user.user_metadata.get("username", res.user.email)
-                st.session_state.access_token = saved_access
-                st.session_state.refresh_token = saved_refresh
-                
-                # Default to home page if they were sitting on login/empty screens
-                if st.session_state.page in ["login", "signup"]:
-                    st.session_state.page = "home"
-                st.rerun()
-        except Exception:
-            # Clear corrupt or expired tokens smoothly
-            controller.remove("sb_access_token")
-            controller.remove("sb_refresh_token")
-            controller.remove("sb_user_email")
-
-# 2. Enforce Login wall if still unauthenticated
+# 2. Enforce Login boundary if still unauthenticated
 if not st.session_state.logged_in and st.session_state.page not in ["login", "signup", "forgot", "reset"]:
     st.session_state.page = "login"
 
