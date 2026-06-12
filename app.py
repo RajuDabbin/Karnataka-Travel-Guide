@@ -99,7 +99,7 @@ st.markdown(
 controller = CookieController(key="auth")
 
 # Give the async controller a tiny window to ensure browser handshakes complete
-time.sleep(0.1)
+time.sleep(0.25)
 
 def try_cookie_signin():
     """Intercepts active tokens from the browser on a fresh refresh or load."""
