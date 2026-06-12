@@ -99,17 +99,18 @@ st.markdown(
 # ==========================================
 # 2. UNIFIED COOKIE CONTROLLER INITIALIZATION
 # ==========================================
+# ==========================================
+# 2. UNIFIED COOKIE CONTROLLER INITIALIZATION
+# ==========================================
 controller = CookieController(key="auth")
 
 # Give the async frontend controller a tiny fraction of a second to build if needed
-time.sleep(0.3)
+time.sleep(0.1)
 
 def try_cookie_signin():
     """Intercepts active tokens natively from backend headers or frontend components."""
     if not st.session_state.logged_in:
         try:
-            # 1. 🌟 THE UNBREAKABLE PHONE FIX: Check native backend request headers first
-            # Streamlit reads these directly from the HTTP request, bypassing mobile iframe blocks!
             headers = st.context.headers
             cookie_string = headers.get("Cookie", "") or headers.get("cookie", "")
             
@@ -119,25 +120,37 @@ def try_cookie_signin():
             
             if cookie_string:
                 # Parse out your cookie values cleanly from the request string
-                parsed_cookies = dict(item.split("=", 1) for item in cookie_string.split("; ") if "=" in item)
-                # Components often save values inside a nested json or raw string format
+                parsed_cookies = {}
+                for item in cookie_string.split("; "):
+                    if "=" in item:
+                        k, v = item.split("=", 1)
+                        parsed_cookies[k.strip()] = v.strip()
+                
                 access = parsed_cookies.get("sb_access_token")
                 refresh = parsed_cookies.get("sb_refresh_token")
                 user_email = parsed_cookies.get("sb_user_email")
                 
-                # Unquote URL-encoded characters if necessary
-                if access: access = urllib.parse.unquote(access).strip('"')
-                if refresh: refresh = urllib.parse.unquote(refresh).strip('"')
-                if user_email: user_email = urllib.parse.unquote(user_email).strip('"')
+                # Clean up URL-encoded and double-escaped component wrapping quotes
+                if access: 
+                    access = urllib.parse.unquote(access).strip('"').replace('\\"', '').strip('"')
+                if refresh: 
+                    refresh = urllib.parse.unquote(refresh).strip('"').replace('\\"', '').strip('"')
+                if user_email: 
+                    user_email = urllib.parse.unquote(user_email).strip('"').replace('\\"', '').strip('"')
 
-            # 2. FALLBACK: If header tracking was blank, read from the frontend component (Laptops)
+            # FALLBACK: If header tracking was blank, read from the frontend component (Laptops)
             if not access or not refresh:
                 access = controller.get("sb_access_token")
                 refresh = controller.get("sb_refresh_token")
                 user_email = controller.get("sb_user_email")
+                
+                # Apply the same strict string string text cleaning to the component inputs
+                if access: access = str(access).strip('"')
+                if refresh: refresh = str(refresh).strip('"')
+                if user_email: user_email = str(user_email).strip('"')
 
-            # 3. VERIFY SESSION WITH SUPABASE IF FOUND
-            if access and refresh:
+            # VERIFY CLEANED SESSION WITH SUPABASE AUTH ENGINE
+            if access and refresh and len(access) > 10:
                 res = supabase.auth.set_session(access, refresh)
                 if res.user:
                     st.session_state.logged_in = True
@@ -154,6 +167,7 @@ def try_cookie_signin():
         except Exception:
             pass
     return False
+    
 def get_local_img_base64(image_path):
     """Converts a local image file to a base64 string for HTML rendering."""
     if os.path.exists(image_path):
