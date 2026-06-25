@@ -2,7 +2,8 @@
 
 An interactive, premium-themed full-stack travel assistant application designed to help explorers seamlessly navigate and plan journeys through Karnataka. Built with a responsive, sunlit-gold and tea-estate green aesthetic, the application scales dynamically across both desktop and mobile viewports.
 
-Live Link: `https://your-app-name.streamlit.app`
+Live Link: https://karnataka-travel-guide-rajudabbin.streamlit.app/
+
 
 ---
 
